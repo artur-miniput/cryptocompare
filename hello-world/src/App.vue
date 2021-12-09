@@ -82,7 +82,7 @@
         <dl class="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-3">
           <!-- карточка -->
           <div
-            v-for="t in filteredTickers()"
+            v-for="t in paginatedTickers"
             :key="t.name"
             @click="select(t)"
             :class="{
@@ -130,7 +130,7 @@
         </h3>
         <div class="flex items-end border-gray-600 border-b border-l h-64">
           <div
-            v-for="(bar, idx) in normalizeGraph()"
+            v-for="(bar, idx) in normalizedGraph"
             :key="idx"
             :style="{ height: `${bar}%` }"
             class="bg-purple-800 border w-10"
@@ -174,12 +174,11 @@ export default {
   data() {
     return {
       ticker: '',
+      filter: '',
       tickers: [],
       selectedTicker: null,
       graph: [],
       page: 1,
-      filter: '',
-      hasNextPage: true,
     }
   },
   created() {
@@ -201,25 +200,57 @@ export default {
       this.tickers.forEach((t) => this.subscribeToUpdates(t.name))
     }
   },
-  methods: {
+  // vue кэширует результаты вызова computed
+  // компьютеды это не методы, это поля, их не надо вызывать
+  // компьютеды не принимают аргумент
+  computed: {
+    startIndex() {
+      return 3 * (this.page - 1)
+    },
+
+    endIndex() {
+      return 3 * this.page
+    },
+
+    // этот код будет вызываться при изменении this.page, this.tickers, this.filter
     filteredTickers() {
-      // console.log(Math.ceil(filteredTickers.length / 3))
       // вывод по 3 страницы
       // 1page -> 0-2
       // 2page -> 3-5
       // (3 * (page - 1), 3 * page - 1)
 
-      const start = (this.page - 1) * 3
-      const end = 3 * this.page
-
-      const filteredTickers = this.tickers.filter((ticker) =>
-        ticker.name.includes(this.filter)
-      )
-
-      this.hasNextPage = filteredTickers.length > end
-
-      return filteredTickers.slice(start, end)
+      return this.tickers.filter((ticker) => ticker.name.includes(this.filter))
     },
+
+    paginatedTickers() {
+      return this.filteredTickers.slice(this.startIndex, this.endIndex)
+    },
+
+    hasNextPage() {
+      return this.filteredTickers.length > this.endIndex
+    },
+
+    normalizedGraph() {
+      const maxValue = Math.max(...this.graph)
+      const minValue = Math.min(...this.graph)
+
+      if (maxValue === minValue) {
+        return this.graph.map(() => 50)
+      }
+
+      return this.graph.map(
+        (price) => 5 + ((price - minValue) * 95) / (maxValue - minValue)
+      )
+    },
+
+    pageStateOptions() {
+      return {
+        filter: this.filter,
+        page: this.page,
+      }
+    },
+  },
+  methods: {
     subscribeToUpdates(tickerName) {
       setInterval(async () => {
         const f = await fetch(
@@ -241,49 +272,54 @@ export default {
         price: '-',
       }
 
-      this.tickers.push(currentTicker)
+      this.tickers = [...this.tickers, currentTicker]
 
       this.filter = ''
 
       this.subscribeToUpdates(currentTicker.name)
 
-      localStorage.setItem('crypto-list', JSON.stringify(this.tickers))
-
       this.ticker = ''
     },
     select(ticker) {
       this.selectedTicker = ticker
-      this.graph = []
     },
     handleDelete(tickerRemove) {
       this.tickers = this.tickers.filter((t) => t !== tickerRemove)
+
+      if (this.selectedTicker === tickerRemove) {
+        this.selectedTicker = null
+      }
+
       localStorage.setItem('crypto-list', JSON.stringify(this.tickers))
     },
-    normalizeGraph() {
-      console.log('test')
-      const maxValue = Math.max(...this.graph)
-      const minValue = Math.min(...this.graph)
-
-      return this.graph.map(
-        (price) => 5 + ((price - minValue) * 95) / (maxValue - minValue)
-      )
-    },
   },
+
+  // логика wotch - когда ... , то ...
+  // когда что-то меняет значение на что-то, выполни что-то
+  // в вотчер приходит старое и новое значение
   watch: {
+    selectedTicker() {
+      this.graph = []
+    },
+
+    tickers() {
+      localStorage.setItem('crypto-list', JSON.stringify(this.tickers))
+    },
+    // откат на страницу назад, если тикеров на страцице не осталось
+    paginatedTickers() {
+      if (this.paginatedTickers.length === 0 && this.page > 1) {
+        this.page -= 1
+      }
+    },
     filter() {
       this.page = 1
-      window.history.pushState(
-        null,
-        document.title,
-        `${window.location.pathname}?filter=${this.filter}&page=${this.page}`
-      )
     },
 
-    page() {
+    pageStateOptions(value) {
       window.history.pushState(
         null,
         document.title,
-        `${window.location.pathname}?filter=${this.filter}&page=${this.page}`
+        `${window.location.pathname}?filter=${value.filter}&page=${value.page}`
       )
     },
   },
