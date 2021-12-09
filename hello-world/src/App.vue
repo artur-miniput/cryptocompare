@@ -45,11 +45,44 @@
 
       <template v-if="tickers.length > 0">
         <hr class="w-full border-t border-gray-600 my-4" />
+        <!-- Фильтр -->
+        <section>
+          <div class="flex">
+            <div class="max-w-xs">
+              <div class="mt-1 relative rounded-md shadow-md">
+                <input
+                  v-model="filter"
+                  type="text"
+                  class="block w-full pr-10 border-gray-300 text-gray-900 focus:outline-none focus:ring-gray-500 focus:border-gray-500 sm:text-sm rounded-md"
+                  placeholder="Фильтр"
+                />
+              </div>
+            </div>
+          </div>
+          <button
+            @click="page = page - 1"
+            v-if="page > 1"
+            type="button"
+            class="my-4 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+          >
+            Назад
+          </button>
+          <button
+            @click="page = page + 1"
+            v-if="hasNextPage"
+            type="button"
+            class="my-4 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+          >
+            Вперед
+          </button>
+        </section>
+        <hr class="w-full border-t border-gray-600 my-4" />
+
         <!-- список тикеров -->
         <dl class="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-3">
           <!-- карточка -->
           <div
-            v-for="t in tickers"
+            v-for="t in filteredTickers()"
             :key="t.name"
             @click="select(t)"
             :class="{
@@ -144,9 +177,24 @@ export default {
       tickers: [],
       selectedTicker: null,
       graph: [],
+      page: 1,
+      filter: '',
+      hasNextPage: true,
     }
   },
   created() {
+    const windowData = Object.fromEntries(
+      new URL(window.location).searchParams.entries()
+    )
+
+    if (windowData.filter) {
+      this.filter = windowData.filter
+    }
+
+    if (windowData.page) {
+      this.page = windowData.page
+    }
+
     const tickersData = localStorage.getItem('crypto-list')
     if (tickersData) {
       this.tickers = JSON.parse(tickersData)
@@ -154,6 +202,24 @@ export default {
     }
   },
   methods: {
+    filteredTickers() {
+      // console.log(Math.ceil(filteredTickers.length / 3))
+      // вывод по 3 страницы
+      // 1page -> 0-2
+      // 2page -> 3-5
+      // (3 * (page - 1), 3 * page - 1)
+
+      const start = (this.page - 1) * 3
+      const end = 3 * this.page
+
+      const filteredTickers = this.tickers.filter((ticker) =>
+        ticker.name.includes(this.filter)
+      )
+
+      this.hasNextPage = filteredTickers.length > end
+
+      return filteredTickers.slice(start, end)
+    },
     subscribeToUpdates(tickerName) {
       setInterval(async () => {
         const f = await fetch(
@@ -166,8 +232,6 @@ export default {
 
         if (this.selectedTicker?.name === tickerName) {
           this.graph.push(data.USD)
-          // console.log(this.graph)
-          // console.log(...this.graph)
         }
       }, 5000)
     },
@@ -178,6 +242,8 @@ export default {
       }
 
       this.tickers.push(currentTicker)
+
+      this.filter = ''
 
       this.subscribeToUpdates(currentTicker.name)
 
@@ -191,6 +257,7 @@ export default {
     },
     handleDelete(tickerRemove) {
       this.tickers = this.tickers.filter((t) => t !== tickerRemove)
+      localStorage.setItem('crypto-list', JSON.stringify(this.tickers))
     },
     normalizeGraph() {
       console.log('test')
@@ -199,6 +266,24 @@ export default {
 
       return this.graph.map(
         (price) => 5 + ((price - minValue) * 95) / (maxValue - minValue)
+      )
+    },
+  },
+  watch: {
+    filter() {
+      this.page = 1
+      window.history.pushState(
+        null,
+        document.title,
+        `${window.location.pathname}?filter=${this.filter}&page=${this.page}`
+      )
+    },
+
+    page() {
+      window.history.pushState(
+        null,
+        document.title,
+        `${window.location.pathname}?filter=${this.filter}&page=${this.page}`
       )
     },
   },
